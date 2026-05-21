@@ -1,5 +1,0 @@
-# Energy Spectrum
-
-Here you find the basic code to find the energy spectrum 
-of the 18 most low lying states. The code is based on the 
-example in [MPSKit.jl](https://github.com/QuantumKitHub/MPSKit.jl)
