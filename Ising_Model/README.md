@@ -14,11 +14,11 @@ operators are the identity 𝟙 (Δ = 0), the spin field σ (Δ = 1/8), and the 
 
 |File|Description|
 |-|-|
-|`ising\_bulk.jl`|Bulk free energy density and velocity via finite-size extrapolation|
-|`ising\_cft\_spectrum.jl`|Energy spectrum → conformal tower and scaling dimensions|
-|`ising\_central\_charge.jl`|Central charge from entanglement entropy scaling (PBC)|
-|`ising\_energy\_spectrum.jl`|Raw energy spectrum via exact diagonalization|
-|`ising\_ope.jl`|OPE coefficient C\_σσε from three-point correlator|
+|`Bulk_Free_Energy_and\Velocity.jl`|Bulk free energy density and velocity via finite-size extrapolation|
+|`CFT_Spectrum.jl`|Energy spectrum → conformal tower and scaling dimensions|
+|`Central_Charge.jl`|Central charge from entanglement entropy scaling (PBC)|
+|`Energy_Spectrum.jl`|Raw energy spectrum via exact diagonalization|
+|`OPE.jl`|OPE coefficient C\_σσε from three-point correlator|
 
 Unlike the Heisenberg scripts, the Ising scripts are self-contained and do not share a
 `Functions.jl` file.
