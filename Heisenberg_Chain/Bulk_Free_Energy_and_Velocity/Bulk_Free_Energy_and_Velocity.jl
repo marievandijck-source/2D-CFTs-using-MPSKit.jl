@@ -1,53 +1,60 @@
 using MPSKit, MPSKitModels, TensorKit, Plots, KrylovKit
-using LinearAlgebra: eigvals, diagm, Hermitian
-using Pkg
 using Logging
 global_logger(NullLogger())
 
 include("Functions.jl")
 
-L = 4
-D = 10
-n = 1
+# ─────────────────────────────────────────────
+# Bulk free energy density and velocity
+# Heisenberg spin-1/2 chain
+# ─────────────────────────────────────────────
 
-#critical Ising Hamiltonian
-H = periodic_boundary_conditions(heisenberg_hamiltonian(), L)
-energies, ψ, sectors = DMRG_H(H, L, D, n)
-#Rough thermodynamic energy density estimate
-E0 = real(expectation_value(ψ[1], H))
-energies, states = exact_diagonalization(H; num = 18, alg = Lanczos(; krylovdim = 200));
-println("okayyy")
+"""
+    energy_density_heisenberg(L, D)
+
+Compute the ground-state energy density E₀/L for a Heisenberg chain
+of length `L` with DMRG bond dimension `D`.
+"""
 function energy_density_heisenberg(L, D)
-
     H = periodic_boundary_conditions(heisenberg_hamiltonian(), L)
-
-    n = 1
-    energies, ψ, sectors = DMRG_H(H, L, D, n)
-
-    E0 = real(expectation_value(ψ[1], H))
-    println(L)
+    energies, ψ, _ = DMRG_H(H, L, D, [1])
+    E0 = real(sum(expectation_value(ψ[1], H)))
+    println("L = $L  →  e₀ = $(E0 / L)")
     return E0
 end
 
-Ls = 12:4:44
-D = 70
-#p = 12, Ls = 40, D = 50 → -0.443145188052332 and 1.5816844813692137
-#p = 15, Ls = 44, D = 60 → -0.44314595009041485 and 1.5800165339915113
+# ─────────────────────────────────────────────
+# Parameters
+# ─────────────────────────────────────────────
+
+Ls = 12:4:44   # system sizes
+D  = 70        # bond dimension
+
+# ─────────────────────────────────────────────
+# Collect ground-state energies
+# ─────────────────────────────────────────────
+
 e_vals = [energy_density_heisenberg(L, D) for L in Ls]
 
-Lvals = Float64.(Ls)
+# ─────────────────────────────────────────────
+# Finite-size extrapolation
+#
+# Ansatz:  E₀(L) = a·L + b/L
+#   → e∞ = a  (bulk energy density)
+#   → c  = -b·6/π  (central charge, via CFT finite-size formula)
+# ─────────────────────────────────────────────
 
-X = hcat(Lvals, 1.0 ./ Lvals)
+p     = 15                          # power-law weight exponent
+Lvals = Float64.(collect(Ls))
+X     = hcat(Lvals, 1.0 ./ Lvals)  # design matrix [L, 1/L]
+w     = Lvals .^ p                  # weights favour larger L
 
-p = 15
-w = Lvals .^ p
+β = (X .* sqrt.(w)) \ (e_vals .* sqrt.(w))   # weighted least squares
+a, b = β[1], β[2]
 
-Xw = X .* sqrt.(w)
-yw = e_vals .* sqrt.(w)
+e_bulk   = a
+c_from_b = -b * 6 / π
 
-β = Xw \ yw
-a = β[1]
-b = β[2]
-
-println(a)
-println(-b*6/π)
+println("\n── Extrapolation results ──")
+println("Bulk energy density e∞ = $e_bulk")
+println("Central charge c       = $c_from_b")
