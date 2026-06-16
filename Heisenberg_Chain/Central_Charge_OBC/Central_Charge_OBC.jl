@@ -1,129 +1,92 @@
-using LinearAlgebra, Statistics
-using KrylovKit
-using LaTeXStrings
-using MPSKit, MPSKitModels, TensorKit
-using Plots
+using MPSKit, MPSKitModels, TensorKit, KrylovKit
+using LinearAlgebra, Plots
 using Logging
+global_logger(NullLogger())
 
+include("Functions.jl")
 
-include("C:/Users/marie/OneDrive/Bureaublad/UGent/thesis/Julia/Heisenberg_JOB/Functions.jl")
+# ─────────────────────────────────────────────
+# Parameters
+# ─────────────────────────────────────────────
 
-Ds = [200]
-L = 140
+L   = 140
+Ds  = [200]
 
-model = heisenberg_hamiltonian()
-H = open_boundary_conditions(model, L)    # OBC: no periodic_boundary_conditions(...)
+# ─────────────────────────────────────────────
+# Hamiltonian (open boundary conditions)
+# ─────────────────────────────────────────────
 
+H    = open_boundary_conditions(heisenberg_hamiltonian(), L)
 phys = SU2Space(1//2 => 1)
 
-function bondspace_heis(D; jmax=6)
-    reps = Pair{Rational{Int},Int}[]
+# ─────────────────────────────────────────────
+# Central charge from entanglement entropy (OBC)
+#
+# Cardy–Calabrese formula (OBC):
+#   S(ℓ) = (c/6) log[(2L/π) sin(πℓ/L)] + const
+# ─────────────────────────────────────────────
 
-    for twoj in 0:(2*jmax)
-        j = twoj//2
-        a = 0.4
-        mult = max(1, round(Int, D * exp(-a * j^2)))
-        push!(reps, j => mult)
-    end
+"""
+    estimate_c_from_state_OBC(ψ; L, fitcuts)
 
-    return SU2Space(reps...)
-end
-
-function estimate_c_from_state_OBC(ψ; L::Int, fitcuts=8:(L-8))
+Fit the entanglement entropy profile of `ψ` to the OBC Cardy–Calabrese formula
+and return the estimated central charge `c` along with fit details.
+"""
+function estimate_c_from_state_OBC(ψ; L::Int, fitcuts = 8:(L-8))
     ℓs = collect(1:L-1)
-    println(L)
-    Lvals = Float64.(ℓs)
+    S  = [entropy(ψ, ℓ) for ℓ in ℓs]
+    x  = log.((2L / π) .* sin.(π .* ℓs ./ L))
 
-    S = [entropy(ψ, ℓ) for ℓ in ℓs]
-
-    x = log.((2L / π) .* sin.(π .* ℓs ./ L))
-
-    xf = x[fitcuts]
-    yf = S[fitcuts]
-
-    M = hcat(ones(length(xf)), xf)
-
-    coeff = M \ yf
+    xf, yf = x[fitcuts], S[fitcuts]
+    coeff   = hcat(ones(length(xf)), xf) \ yf
     intercept, slope = coeff
 
-    c_est = 6 * slope   # OBC: S = c/6 log(...) + const
-
+    c_est = 6 * slope
     return c_est, slope, intercept, ℓs, S, x
 end
 
-cs = Float64[]
-states = Any[]
-fits = Any[]
+# ─────────────────────────────────────────────
+# Run over bond dimensions
+# ─────────────────────────────────────────────
+
+fits = []
 
 for D in Ds
-    bond = bondspace_heis(D; jmax=6)
-
-    ψ0 = FiniteMPS(L, phys, bond)
-
-    ψ, env, δ = find_groundstate(ψ0, H, DMRG())
+    ψ0      = FiniteMPS(L, phys, bondspace_heis(D))
+    ψ, _, _ = find_groundstate(ψ0, H, DMRG())
 
     c_est, slope, intercept, ℓs, S, x = estimate_c_from_state_OBC(
-        ψ;
-        L=L,
-        fitcuts=4:2:(L-4)
+        ψ; L = L, fitcuts = 4:2:(L-4)
     )
 
-    push!(cs, c_est)
-    push!(states, ψ)
-    push!(fits, (
-        c_est=c_est,
-        slope=slope,
-        intercept=intercept,
-        ℓs=ℓs,
-        S=S,
-        x=x
-    ))
-
-    println("D = $D -> c ≈ $(round(c_est, digits=6))")
+    push!(fits, (; c_est, slope, intercept, ℓs, S, x))
+    println("D = $D  →  c ≈ $(round(c_est; digits=6))")
 end
 
+# ─────────────────────────────────────────────
+# Plot best result
+# ─────────────────────────────────────────────
 
+bf     = fits[end]
+yfit   = bf.intercept .+ bf.slope .* bf.x
+even_i = findall(iseven, bf.ℓs)
+odd_i  = findall(isodd,  bf.ℓs)
 
-bestfit = fits[end]
-bestD = Ds[end]
-
-ℓs = bestfit.ℓs
-S = bestfit.S
-xvals = bestfit.x
-slope = bestfit.slope
-intercept = bestfit.intercept
-c_best = bestfit.c_est
-
-yfit = intercept .+ slope .* xvals
-
-even_idx = findall(iseven, ℓs)
-odd_idx  = findall(isodd, ℓs)
-
-scatter(
-    xvals[even_idx],
-    S[even_idx],
-    label="even ℓ",
-    xlabel="ln((L/π) sin(πℓ/L))",
-    ylabel="S(ℓ)",
-    color = :maroon,
-    dpi=300
+scatter(bf.x[even_i], bf.S[even_i];
+    label   = "even ℓ",
+    color   = :maroon,
+    xlabel  = "ln((2L/π) sin(πℓ/L))",
+    ylabel  = "S(ℓ)",
+    dpi     = 300,
 )
-
-scatter!(
-    xvals[odd_idx],
-    S[odd_idx],
-    label="odd ℓ",
-    color = :firebrick1
+scatter!(bf.x[odd_i], bf.S[odd_i];
+    label = "odd ℓ",
+    color = :firebrick1,
 )
-
-plot!(
-    xvals,
-    yfit;
-    label="fit: c = $(round(c_best, digits=4))",
-    linewidth=1.1,
-    linestyle=:dash,
-    color=:black
+plot!(bf.x, yfit;
+    label     = "fit: c = $(round(bf.c_est; digits=4))",
+    linewidth = 1.1,
+    linestyle = :dash,
+    color     = :black,
 )
-
-
 title!("Entanglement Entropy Scaling: OBC")
